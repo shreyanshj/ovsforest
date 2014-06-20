@@ -100,7 +100,7 @@ int main(int argc, char *argv[])
     int nsid;
     int pid;
     static struct sched_param sp;
-    while ((c = getopt(argc, argv, "+cdnpa:g:r:vh")) != -1)
+    while ((c = getopt(argc, argv, "+cdn:pa:g:r:vh")) != -1)
         switch(c) {
         case 'c':
             /* close file descriptors except stdin/out/error */
@@ -122,18 +122,24 @@ int main(int argc, char *argv[])
             }
             setsid();
             break;
-        case 'n':
+        case 'n': {
             /* run in network and mount namespaces */
+            char ns_path[100];
+
+            snprintf(ns_path, 100, "%s/%s", "/var/run/netns", optarg);
+            close(open(ns_path, O_RDONLY|O_CREAT|O_EXCL, 0));
             if (unshare(CLONE_NEWNET|CLONE_NEWNS) == -1) {
                 perror("unshare");
                 return 1;
             }
+            mount("/proc/self/ns/net", ns_path, "none", MS_BIND, NULL);
             /* mount sysfs to pick up the new network namespace */
             if (mount("sysfs", "/sys", "sysfs", MS_MGC_VAL, NULL) == -1) {
                 perror("mount");
                 return 1;
             }
             break;
+        }
         case 'p':
             /* print pid */
             printf("\001%d\n", getpid());

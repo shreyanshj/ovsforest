@@ -194,8 +194,7 @@ class Mininet( object ):
            cls: custom switch class/constructor (optional)
            returns: added switch
            side effect: increments listenPort ivar ."""
-        defaults = { 'listenPort': self.listenPort,
-                     'inNamespace': self.inNamespace }
+        defaults = { 'listenPort': self.listenPort }
         defaults.update( params )
         if not cls:
             cls = self.switch

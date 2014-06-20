@@ -76,6 +76,7 @@ class Node( object ):
 
         self.name = name
         self.inNamespace = inNamespace
+        self.namespace = None
 
         # Stash configuration parameters for future reference
         self.params = params
@@ -120,7 +121,9 @@ class Node( object ):
         # (p)rint pid, and run in (n)amespace
         opts = '-cdp'
         if self.inNamespace:
+            self.namespace = 'mn-%s' % self.name
             opts += 'n'
+            opts += self.namespace
         # bash -m: enable job control
         # -s: pass $* to shell, and make process easy to find in ps
         cmd = [ 'mnexec', opts, 'bash', '-ms', 'mininet:' + self.name ]
@@ -149,6 +152,8 @@ class Node( object ):
             if self.name in intfName:
                 quietRun( 'ip link del ' + intfName )
         self.shell = None
+        if self.namespace:
+            os.system( 'ip netns delete %s' % self.namespace )
 
     # Subshell I/O, commands and control
 
@@ -1045,9 +1050,9 @@ class OVSSwitch( Switch ):
 
     def start( self, controllers ):
         "Start up a new OVS OpenFlow switch using ovs-vsctl"
-        if self.inNamespace:
-            raise Exception(
-                'OVS kernel switch does not work in a namespace' )
+#        if self.inNamespace:
+#            raise Exception(
+#                'OVS kernel switch does not work in a namespace' )
         # We should probably call config instead, but this
         # requires some rethinking...
         self.cmd( 'ifconfig lo up' )
@@ -1105,6 +1110,9 @@ class OVSSwitch( Switch ):
         if self.datapath == 'user':
             self.cmd( 'ip link del', self )
         self.deleteIntfs()
+        netns = self.cmd( "ip netns list | egrep -o '^mn-s\w+'" ).split( '\n' )
+        for n in netns:
+            self.cmd( "ip netns delete " + n ) 
 
 OVSKernelSwitch = OVSSwitch
 
