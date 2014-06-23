@@ -41,7 +41,7 @@ from mininet.util import quietRun, isShellBuiltin, dumpNodeConnections
 class CLI( Cmd ):
     "Simple command-line interface to talk to nodes."
 
-    prompt = 'mininet> '
+    prompt = 'OVSForest> '
 
     def __init__( self, mininet, stdin=sys.stdin, script=None ):
         self.mn = mininet

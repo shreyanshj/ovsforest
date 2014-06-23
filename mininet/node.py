@@ -59,7 +59,7 @@ from mininet.moduledeps import moduleDeps, pathCheck, OVS_KMOD, OF_KMOD, TUN
 from mininet.link import Link, Intf, TCIntf
 from re import findall
 from distutils.version import StrictVersion
-
+counter=0
 class Node( object ):
     """A virtual network node is simply a shell in a network namespace.
        We communicate with it using pipes."""
@@ -960,7 +960,7 @@ class OVSLegacyKernelSwitch( Switch ):
         self.deleteIntfs()
 
 
-class OVSSwitch( Switch ):
+class OVSForest( Switch ):
     "Open vSwitch switch. Depends on ovs-vsctl."
 
     def __init__( self, name, failMode='secure', datapath='kernel',
@@ -978,22 +978,22 @@ class OVSSwitch( Switch ):
     @classmethod
     def setup( cls ):
         "Make sure Open vSwitch is installed and working"
-        pathCheck( 'ovs-vsctl',
-                   moduleName='Open vSwitch (openvswitch.org)')
+    #    pathCheck( 'ovs-vsctl',
+    #               moduleName='Open vSwitch (openvswitch.org)')
         # This should no longer be needed, and it breaks
         # with OVS 1.7 which has renamed the kernel module:
         #  moduleDeps( subtract=OF_KMOD, add=OVS_KMOD )
-        out, err, exitcode = errRun( 'ovs-vsctl -t 1 show' )
-        if exitcode:
-            error( out + err +
-                   'ovs-vsctl exited with code %d\n' % exitcode +
-                   '*** Error connecting to ovs-db with ovs-vsctl\n'
-                   'Make sure that Open vSwitch is installed, '
-                   'that ovsdb-server is running, and that\n'
-                   '"ovs-vsctl show" works correctly.\n'
-                   'You may wish to try '
-                   '"service openvswitch-switch start".\n' )
-            exit( 1 )
+    #    out, err, exitcode = errRun( 'ovs-vsctl -t 1 show' )
+    #    if exitcode:
+    #        error( out + err +
+    #               'ovs-vsctl exited with code %d\n' % exitcode +
+    #               '*** Error connecting to ovs-db with ovs-vsctl\n'
+    #               'Make sure that Open vSwitch is installed, '
+    #               'that ovsdb-server is running, and that\n'
+    #               '"ovs-vsctl show" works correctly.\n'
+    #               'You may wish to try '
+    #               '"service openvswitch-switch start".\n' )
+    #        exit( 1 )
         info = quietRun( 'ovs-vsctl --version' )
         cls.OVSVersion =  findall( '\d+\.\d+', info )[ 0 ]
 
@@ -1058,6 +1058,38 @@ class OVSSwitch( Switch ):
         self.cmd( 'ifconfig lo up' )
         # Annoyingly, --if-exists option seems not to work
         self.cmd( 'ovs-vsctl del-br', self )
+        a = ( '/tmp/mininet-%s' %  self )
+        self.cmd( 'mkdir -p %s' % a  )
+        "Start up a new OVS OpenFlow switch using ovs-vsctl"
+
+        self.cmd('export OVS_RUNDIR=%s' % a )
+        self.cmd( 'ovsdb-tool create %s' % a + '/conf.db' + \
+                  ' /home/neeraj/openvswitch-2.0.0/vswitchd/vswitch.ovsschema' )
+        self.cmd( 'ovsdb-server %s' % a + '/conf.db' + \
+        ' -vconsole:emer' + \
+        ' -vsyslog:err' + \
+        ' -vfile:info' + \
+        ' --remote=punix:%s' % a + '/db.sock' + \
+        ' --private-key=db:Open_vSwitch,SSL,private_key' \
+        ' --certificate=db:Open_vSwitch,SSL,certificate' \
+        ' --bootstrap-ca-cert=db:Open_vSwitch,SSL,ca_cert' \
+        ' --no-chdir' \
+        ' --log-file=%s' % a + '/ovsdb-server.log' \
+        ' --pidfile=%s' % a + '/ovsdb-server.pid' \
+        ' --detach' \
+        ' --monitor' )
+
+        self.cmd( 'ovs-vsctl --db=unix:%s' % a + '/db.sock --no-wait init' )
+        self.cmd ( 'echo $OVS_RUNDIR' )
+        self.cmd( 'ovs-vswitchd unix:%s' % a + '/db.sock' \
+        ' -vsyslog:err' \
+        ' -vfile:info' \
+        ' --mlockall' \
+        ' --no-chdir' \
+        ' --log-file=%s' % a + '/ovs-vswitchd.log' \
+        ' --pidfile=%s' % a + '/ovs-vswitchd.pid' \
+        ' --detach' \
+        ' --monitor' )
         int( self.dpid, 16 ) # DPID must be a hex string
         # Interfaces and controllers
         intfs = ' '.join( '-- add-port %s %s ' % ( self, intf ) +
@@ -1070,6 +1102,166 @@ class OVSSwitch( Switch ):
             clist += ' ptcp:%s' % self.listenPort
         # Construct big ovs-vsctl command for new versions of OVS
         if not self.isOldOVS():
+            cmd = ( 'ovs-vsctl add-br %s ' % self +
+                    '-- set Bridge %s ' % self +
+                    'other_config:datapath-id=%s ' % self.dpid +
+                    '-- set-fail-mode %s %s ' % ( self, self.failMode ) +
+                    intfs +
+                    '-- set-controller %s %s ' % ( self, clist ) )
+        # Construct ovs-vsctl commands for old versions of OVS
+        else:
+            self.cmd( 'ovs-vsctl add-br', self )
+            for intf in self.intfList():
+                if not intf.IP():
+                    self.cmd('ovs-vsctl add-port', self, intf )
+            cmd = ('ovs-vsctl set Bridge %s ' % self +
+                'other_config:datapath-id=%s ' % self.dpid +
+                '-- set-fail-mode %s %s ' % ( self, self.failMode ) +
+                '-- set-controller %s %s ' % ( self, clist ) )  
+        if not self.inband:
+            cmd += ( '-- set bridge %s '
+                     'other-config:disable-in-band=true ' % self )
+        if self.datapath == 'user':
+            cmd +=  '-- set bridge %s datapath_type=netdev ' % self
+        # Reconnect quickly to controllers (1s vs. 15s max_backoff)
+        for uuid in self.controllerUUIDs():
+            if uuid.count( '-' ) != 4:
+                # Doesn't look like a UUID
+                continue
+            uuid = uuid.strip()
+            cmd += '-- set Controller %smax_backoff=1000 ' % uuid
+        # Do it!!
+        self.cmd( cmd )
+        global counter
+        self.cmd('ifconfig %s' % self + ' 192.168.%s' % counter + '.1')
+        counter = counter + 1
+        for intf in self.intfList():
+            self.TCReapply( intf )
+
+    def stop( self ):
+        "Terminate OVS switch."
+        self.cmd( 'ovs-vsctl del-br', self )
+        if self.datapath == 'user':
+            self.cmd( 'ip link del', self )
+        self.deleteIntfs()
+        netns = self.cmd( "ip netns list | egrep -o '^mn-s\w+'" ).split( '\n' )
+        for n in netns:
+            self.cmd( "ip netns delete " + n )
+
+#OVSKernelSwitch = OVSSwitch
+
+
+class OVSSwitch( Switch ):
+    "Open vSwitch switch. Depends on ovs-vsctl."
+
+    def __init__( self, name, failMode='secure', datapath='kernel',
+                 inband=False, **params ):
+        """Init.
+           name: name for switch
+           failMode: controller loss behavior (secure|open)
+           datapath: userspace or kernel mode (kernel|user)
+           inband: use in-band control (False)"""
+        Switch.__init__( self, name, **params )
+        self.failMode = failMode
+        self.datapath = datapath
+        self.inband = inband
+
+    @classmethod
+    def setup( cls ):
+        "Make sure Open vSwitch is installed and working"
+        pathCheck( 'ovs-vsctl',
+                    moduleName='Open vSwitch (openvswitch.org)')
+        # This should no longer be needed, and it breaks
+        # with OVS 1.7 which has renamed the kernel module:
+        #  moduleDeps( subtract=OF_KMOD, add=OVS_KMOD )
+        out, err, exitcode = errRun( 'ovs-vsctl -t 1 show' )
+        if exitcode:
+             error( out + err +
+                    'ovs-vsctl exited with code %d\n' % exitcode +
+                    '*** Error connecting to ovs-db with ovs-vsctl\n'
+                    'Make sure that Open vSwitch is installed, '
+                    'that ovsdb-server is running, and that\n'
+                    '"ovs-vsctl show" works correctly.\n'
+                    'You may wish to try '
+                    '"service openvswitch-switch start".\n' )
+             exit( 1 )
+        info = quietRun( 'ovs-vsctl --version' )
+        cls.OVSVersion =  findall( '\d+\.\d+', info )[ 0 ]
+
+    @classmethod
+    def isOldOVS( cls ):
+        return ( StrictVersion( cls.OVSVersion ) <
+             StrictVersion( '1.10' ) )
+
+    @classmethod
+    def batchShutdown( cls, switches ):
+        "Call ovs-vsctl del-br on all OVSSwitches in a list"
+        quietRun( 'ovs-vsctl ' +
+                  ' -- '.join( '--if-exists del-br %s' % s
+                               for s in switches ) )
+
+    def dpctl( self, *args ):
+        "Run ovs-ofctl command"
+        return self.cmd( 'ovs-ofctl', args[ 0 ], self, *args[ 1: ] )
+
+    @staticmethod
+    def TCReapply( intf ):
+        """Unfortunately OVS and Mininet are fighting
+           over tc queuing disciplines. As a quick hack/
+           workaround, we clear OVS's and reapply our own."""
+        if type( intf ) is TCIntf:
+            intf.config( **intf.params )
+
+    def attach( self, intf ):
+        "Connect a data port"
+        self.cmd( 'ovs-vsctl add-port', self, intf )
+        self.cmd( 'ifconfig', intf, 'up' )
+        self.TCReapply( intf )
+
+    def detach( self, intf ):
+        "Disconnect a data port"
+        self.cmd( 'ovs-vsctl del-port', self, intf )
+
+    def controllerUUIDs( self ):
+        "Return ovsdb UUIDs for our controllers"
+        uuids = []
+        controllers = self.cmd( 'ovs-vsctl -- get Bridge', self,
+                               'Controller' ).strip()
+        if controllers.startswith( '[' ) and controllers.endswith( ']' ):
+            controllers = controllers[ 1 : -1 ]
+            uuids = [ c.strip() for c in controllers.split( ',' ) ]
+        return uuids
+
+    def connected( self ):
+        "Are we connected to at least one of our controllers?"
+        results = [ 'true' in self.cmd( 'ovs-vsctl -- get Controller',
+                                         uuid, 'is_connected' )
+                    for uuid in self.controllerUUIDs() ]
+        return reduce( or_, results, False )
+
+    def start( self, controllers ):
+        "Start up a new OVS OpenFlow switch using ovs-vsctl"
+        if self.inNamespace:
+            raise Exception(
+                'OVS kernel switch does not work in a namespace' )
+        # We should probably call config instead, but this
+        # requires some rethinking...
+        self.cmd( 'ifconfig lo up' )
+        # Annoyingly, --if-exists option seems not to worki
+
+        self.cmd( 'ovs-vsctl del-br', self )
+        int( self.dpid, 16 ) # DPID must be a hex string
+        # Interfaces and controllers
+        intfs = ' '.join( '-- add-port %s %s ' % ( self, intf ) +
+                          '-- set Interface %s ' % intf +
+                          'ofport_request=%s ' % self.ports[ intf ]
+                         for intf in self.intfList() if not intf.IP() )
+        clist = ' '.join( '%s:%s:%d' % ( c.protocol, c.IP(), c.port )
+                         for c in controllers )
+        if self.listenPort:
+            clist += ' ptcp:%s' % self.listenPort
+        # Construct big ovs-vsctl command for new versions of OVS
+	if not self.isOldOVS():
             cmd = ( 'ovs-vsctl add-br %s ' % self +
                     '-- set Bridge %s ' % self +
                     'other_config:datapath-id=%s ' % self.dpid +
@@ -1110,9 +1302,6 @@ class OVSSwitch( Switch ):
         if self.datapath == 'user':
             self.cmd( 'ip link del', self )
         self.deleteIntfs()
-        netns = self.cmd( "ip netns list | egrep -o '^mn-s\w+'" ).split( '\n' )
-        for n in netns:
-            self.cmd( "ip netns delete " + n ) 
 
 OVSKernelSwitch = OVSSwitch
 

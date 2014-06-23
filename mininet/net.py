@@ -98,7 +98,7 @@ from mininet.log import info, error, debug, output
 from mininet.node import Host, OVSKernelSwitch, Controller
 from mininet.link import Link, Intf
 from mininet.util import quietRun, fixLimits, numCores, ensureRoot
-from mininet.util import macColonHex, ipStr, ipParse, netParse, ipAdd
+from mininet.util import macColonHex, ipStr, ipParse, netParse, ipAdd, ipAddR
 from mininet.term import cleanUpScreens, makeTerms
 
 # Mininet version: should be consistent with README and LICENSE
@@ -139,6 +139,7 @@ class Mininet( object ):
         self.ipBase = ipBase
         self.ipBaseNum, self.prefixLen = netParse( self.ipBase )
         self.nextIP = 1  # start for address allocation
+        self.nextIPR = 1  # start for address allocation
         self.inNamespace = inNamespace
         self.xterms = xterms
         self.cleanup = cleanup
@@ -195,6 +196,7 @@ class Mininet( object ):
            returns: added switch
            side effect: increments listenPort ivar ."""
         defaults = { 'listenPort': self.listenPort }
+
         defaults.update( params )
         if not cls:
             cls = self.switch
@@ -204,6 +206,7 @@ class Mininet( object ):
         self.switches.append( sw )
         self.nameToNode[ name ] = sw
         return sw
+
 
     def addController( self, name='c0', controller=None, **params ):
         """Add controller.
@@ -308,7 +311,8 @@ class Mininet( object ):
         """Build mininet from a topology object
            At the end of this function, everything should be connected
            and up."""
-
+       
+        
         # Possibly we should clean up here and/or validate
         # the topo
         if self.cleanup:
@@ -324,8 +328,8 @@ class Mininet( object ):
                 classes = [ classes ]
             for i, cls in enumerate( classes ):
                 self.addController( 'c%d' % i, cls )
-
-        info( '*** Adding hosts:\n' )
+        
+        info( '*** Adding hosts and Router:\n' )
         for hostName in topo.hosts():
             self.addHost( hostName, **topo.nodeInfo( hostName ) )
             info( hostName + ' ' )
@@ -334,6 +338,11 @@ class Mininet( object ):
         for switchName in topo.switches():
             self.addSwitch( switchName, **topo.nodeInfo( switchName) )
             info( switchName + ' ' )
+            if (switchName == 'r0'):
+                quietRun('ip link add r1-veth4 type veth peer name r1-veth5')
+                quietRun('ip link set r1-veth5 netns mn-r0')
+                quietRun('ip link set dev r1-veth4 up')
+                quietRun('ip netns exec mn-r0 ip link set dev r1-veth5 up')
 
         info( '\n*** Adding links:\n' )
         for srcName, dstName in topo.links(sort=True):
@@ -343,6 +352,7 @@ class Mininet( object ):
             self.addLink( src, dst, srcPort, dstPort, **params )
             info( '(%s, %s) ' % ( src.name, dst.name ) )
 
+       
         info( '\n' )
 
     def configureControlNetwork( self ):
@@ -356,7 +366,7 @@ class Mininet( object ):
             self.buildFromTopo( self.topo )
         if self.inNamespace:
             self.configureControlNetwork()
-        info( '*** Configuring hosts\n' )
+        info( '*** Configuring hosts and Router\n' )
         self.configHosts()
         if self.xterms:
             self.startTerms()

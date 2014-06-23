@@ -11,8 +11,7 @@ A Topo object can be a topology database for NOX, can represent a physical
 setup for testing, and can even be emulated with the Mininet package.
 '''
 
-from mininet.util import irange, natural, naturalSeq
-
+from mininet.util import irange, natural, naturalSeq, quietRun
 class MultiGraph( object ):
     "Utility class to track nodes and edges - replaces networkx.Graph"
 
@@ -206,8 +205,10 @@ class SingleSwitchTopo(Topo):
         super(SingleSwitchTopo, self).__init__(**opts)
 
         self.k = k
-
+        router = self.addSwitch('r0')
         switch = self.addSwitch('s1')
+        self.addLink(router, switch)
+     
         for h in irange(1, k):
             host = self.addHost('h%s' % h)
             self.addLink(host, switch)
@@ -254,16 +255,20 @@ class LinearTopo(Topo):
         else:
             genHostName = lambda i, j: 'h%ss%d' % (j, i)
 
-
+        router = self.addSwitch('r0')
+        #quietRun('ip link add r1-eth0 type veth peer name r1-eth1')
+        #quietRun('ip link set r1-eth1 netns mn-router')
+        #quietRun('ip netns exec mn-router r1-eth1 up')
         lastSwitch = None
         for i in irange(1, k):
             # Add switch
             switch = self.addSwitch('s%s' % i)
+            self.addLink(router, switch) 
             # Add hosts to switch
             for j in irange(1, n):
                 host = self.addHost(genHostName(i, j))
                 self.addLink(host, switch)
             # Connect switch to previous
-            if lastSwitch:
-                self.addLink(switch, lastSwitch)
-            lastSwitch = switch
+           # if lastSwitch:
+           #     self.addLink(switch, lastSwitch)
+           # lastSwitch = switch

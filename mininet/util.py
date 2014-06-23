@@ -278,6 +278,18 @@ def ipAdd( i, prefixLen=8, ipBaseNum=0x0a000000 ):
     ipnum = ( ipBaseNum & mask ) + i
     return ipStr( ipnum )
 
+def ipAddR( i, prefixLen=8, ipBaseNum=0x0c0a8000 ):
+    """Return IP address string from ints
+       i: int to be added to ipbase
+       prefixLen: optional IP prefix length
+       ipBaseNum: option base IP address as int
+       returns IP address as string"""
+    imax = 0xffffffff >> prefixLen
+    assert i <= imax
+    mask = 0xffffffff ^ imax
+    ipnum = ( ipBaseNum & mask ) + i
+    return ipStr( ipnum )
+
 def ipParse( ip ):
     "Parse an IP address and return an unsigned int."
     args = [ int( arg ) for arg in ip.split( '.' ) ]
