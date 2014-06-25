@@ -978,22 +978,6 @@ class OVSForest( Switch ):
     @classmethod
     def setup( cls ):
         "Make sure Open vSwitch is installed and working"
-    #    pathCheck( 'ovs-vsctl',
-    #               moduleName='Open vSwitch (openvswitch.org)')
-        # This should no longer be needed, and it breaks
-        # with OVS 1.7 which has renamed the kernel module:
-        #  moduleDeps( subtract=OF_KMOD, add=OVS_KMOD )
-    #    out, err, exitcode = errRun( 'ovs-vsctl -t 1 show' )
-    #    if exitcode:
-    #        error( out + err +
-    #               'ovs-vsctl exited with code %d\n' % exitcode +
-    #               '*** Error connecting to ovs-db with ovs-vsctl\n'
-    #               'Make sure that Open vSwitch is installed, '
-    #               'that ovsdb-server is running, and that\n'
-    #               '"ovs-vsctl show" works correctly.\n'
-    #               'You may wish to try '
-    #               '"service openvswitch-switch start".\n' )
-    #        exit( 1 )
         info = quietRun( 'ovs-vsctl --version' )
         cls.OVSVersion =  findall( '\d+\.\d+', info )[ 0 ]
 
@@ -1050,9 +1034,6 @@ class OVSForest( Switch ):
 
     def start( self, controllers ):
         "Start up a new OVS OpenFlow switch using ovs-vsctl"
-#        if self.inNamespace:
-#            raise Exception(
-#                'OVS kernel switch does not work in a namespace' )
         # We should probably call config instead, but this
         # requires some rethinking...
         self.cmd( 'ifconfig lo up' )
