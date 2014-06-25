@@ -98,7 +98,7 @@ from mininet.log import info, error, debug, output
 from mininet.node import Host, OVSKernelSwitch, Controller
 from mininet.link import Link, Intf
 from mininet.util import quietRun, fixLimits, numCores, ensureRoot
-from mininet.util import macColonHex, ipStr, ipParse, netParse, ipAdd, ipAddR
+from mininet.util import macColonHex, ipStr, ipParse, netParse, ipAdd
 from mininet.term import cleanUpScreens, makeTerms
 
 # Mininet version: should be consistent with README and LICENSE
@@ -339,10 +339,10 @@ class Mininet( object ):
             self.addSwitch( switchName, **topo.nodeInfo( switchName) )
             info( switchName + ' ' )
             if (switchName == 'r0'):
-                quietRun('ip link add r1-veth4 type veth peer name r1-veth5')
-                quietRun('ip link set r1-veth5 netns mn-r0')
-                quietRun('ip link set dev r1-veth4 up')
-                quietRun('ip netns exec mn-r0 ip link set dev r1-veth5 up')
+                quietRun('ip link add R-veth0 type veth peer name R-veth1')
+                quietRun('ip link set R-veth1 netns mn-r0')
+                quietRun('ip link set dev R-veth0 up')
+                quietRun('ip netns exec mn-r0 ip link set dev R-veth1 up')
 
         info( '\n*** Adding links:\n' )
         for srcName, dstName in topo.links(sort=True):

@@ -256,9 +256,6 @@ class LinearTopo(Topo):
             genHostName = lambda i, j: 'h%ss%d' % (j, i)
 
         router = self.addSwitch('r0')
-        #quietRun('ip link add r1-eth0 type veth peer name r1-eth1')
-        #quietRun('ip link set r1-eth1 netns mn-router')
-        #quietRun('ip netns exec mn-router r1-eth1 up')
         lastSwitch = None
         for i in irange(1, k):
             # Add switch

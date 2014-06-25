@@ -1133,8 +1133,9 @@ class OVSForest( Switch ):
         # Do it!!
         self.cmd( cmd )
         global counter
-        self.cmd('ifconfig %s' % self + ' 192.168.%s' % counter + '.1')
+        self.cmd('ifconfig %s' % self + ' 192.168.%s' % counter + '.1/16' )
         counter = counter + 1
+        self.cmd('ovs-ofctl add-flow %s' % self + ' actions=NORMAL')
         for intf in self.intfList():
             self.TCReapply( intf )
 
