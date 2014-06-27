@@ -974,6 +974,8 @@ class OVSForest( Switch ):
         self.failMode = failMode
         self.datapath = datapath
         self.inband = inband
+        self.vswitchpid = 0
+        self.serverpid = 0
 
     @classmethod
     def setup( cls ):
@@ -1044,8 +1046,16 @@ class OVSForest( Switch ):
         "Start up a new OVS OpenFlow switch using ovs-vsctl"
 
         self.cmd('export OVS_RUNDIR=%s' % a )
+        #Initialize the configuration database using ovsdb-tool
         self.cmd( 'ovsdb-tool create %s' % a + '/conf.db' + \
                   ' /home/neeraj/openvswitch-2.0.0/vswitchd/vswitch.ovsschema' )
+        # Before starting ovs-vswitchd itself, you need to start its
+        # configuration database, ovsdb-server.  Each machine/namespace on
+        # which OpenvSwitch is installed should run its own copy of ovsdb-server.
+        # Configure it to use the database created in above step,
+        # To listen on a Unix domain socket, to connect to any managers
+        # specified in the database itself, and to use the SSL
+        # configuration in the database
         self.cmd( 'ovsdb-server %s' % a + '/conf.db' + \
         ' -vconsole:emer' + \
         ' -vsyslog:err' + \
@@ -1059,9 +1069,15 @@ class OVSForest( Switch ):
         ' --pidfile=%s' % a + '/ovsdb-server.pid' \
         ' --detach' \
         ' --monitor' )
-
+        # --db=server Sets  server as the database server that ovs-vsctl 
+        # contacts to query or modify configuration.  The default is
+        # unix:/usr/local/var/run/openvswitch/db.sock. 
         self.cmd( 'ovs-vsctl --db=unix:%s' % a + '/db.sock --no-wait init' )
-        self.cmd ( 'echo $OVS_RUNDIR' )
+        #  ovs-vswitchd - Open vSwitch daemon that manages and controls 
+        #  any number of Open vSwitch switches on the local machine.
+        #  unix:file Connect to the Unix domain server socket named file.
+        #   --log-file path of log file
+        #   --pidfile path of PID file
         self.cmd( 'ovs-vswitchd unix:%s' % a + '/db.sock' \
         ' -vsyslog:err' \
         ' -vfile:info' \
@@ -1071,6 +1087,14 @@ class OVSForest( Switch ):
         ' --pidfile=%s' % a + '/ovs-vswitchd.pid' \
         ' --detach' \
         ' --monitor' )
+        # Securing the PID of ovsdb-server process for cleanup.
+        file = open('%s' % a + '/ovsdb-server.pid', 'r')
+        self.serverpid = file.read().strip()
+        file.close()
+        # Securing the PID of ovs-vswitchd process for cleanup.
+        file = open('%s' % a + '/ovs-vswitchd.pid', 'r')
+        self.vswitchpid = file.read().strip()
+        file.close()
         int( self.dpid, 16 ) # DPID must be a hex string
         # Interfaces and controllers
         intfs = ' '.join( '-- add-port %s %s ' % ( self, intf ) +
@@ -1113,16 +1137,84 @@ class OVSForest( Switch ):
             cmd += '-- set Controller %smax_backoff=1000 ' % uuid
         # Do it!!
         self.cmd( cmd )
+        # Configurations on router machine:
+        if self.name == "r0":
+            # Adding bridge r1 for external routing
+            self.cmd ( 'ovs-vsctl add-br "r1" ' )
+            # COnfiguration of IP address on "r1" bridge 
+            self.cmd ( 'ifconfig "r1" 191.168.13.13/16' )
+            # Enale proxy_arp configuration
+            self.cmd ( 'echo "1" >  /proc/sys/net/ipv4/conf/r1/proxy_arp' )
+            # Creating veth interfaces for connectiong two bridges
+            self.cmd ( 'ip link add bridge-pair0 type veth peer name \
+                       bridge-pair1' )
+            # Adding bridge-pair0 as a port in "r0"
+            self.cmd ( 'ovs-vsctl add-port "r0" bridge-pair0' )
+            # Adding bridge-pair1 as a port in "r1"
+            self.cmd ( 'ovs-vsctl add-port "r1" bridge-pair1' )
+            # Bring up the veth interfaces
+            self.cmd ( 'ip link set dev bridge-pair0 up' )
+            self.cmd ( 'ip link set dev bridge-pair1 up' )
+            # Creating veth interfaces for communication between host
+            # and router namespace
+            quietRun ( 'ip link add ex-veth0 type veth peer name ex-veth1' )
+            # Set one of veth interface on router namespace
+            quietRun ( 'ip link set ex-veth1 netns mn-r0' )
+            # Bring up the veth interfaces
+            quietRun ( 'ip link set dev ex-veth0 up' )
+            # Bring up the veth interface in namespace
+            quietRun ( 'ip netns exec mn-r0 ip link set dev ex-veth1 up' )
+            # Adding ex-veth1 as a port in "r1"
+            self.cmd ( 'ovs-vsctl add-port "r1" "ex-veth1" ' )
+            # Creating Bridge on host machine 
+            quietRun ( 'brctl addbr controller' )
+            # Adding ex-veth0 as a port in "controller"
+            quietRun ( 'brctl addif controller ex-veth0' )
+            # Adding nat entry in host machine for communication with out side world
+            quietRun ( 'iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE' )
+            # Adding nat entry in router machine for communication with host
+            self.cmd ( 'iptables -t nat -A POSTROUTING -o "r1" -j MASQUERADE' )
+            # Adding route entry in router machine to route packet to specified destination
+            self.cmd (' route add -net 10.0.0.0/16 gw 191.168.13.13 dev "r1" ' )
+           
         global counter
+        # Creating and assigning IP Addresses to OVS switch in different namespaces
+        # IP Address series 192.168.1.1 ~ 192.168.255.1 
+        # ( Currently 255 switches are supported ) 
         self.cmd('ifconfig %s' % self + ' 192.168.%s' % counter + '.1/16' )
         counter = counter + 1
+        # Adding one flow entry with all fields wildcarded and action NORMAL
         self.cmd('ovs-ofctl add-flow %s' % self + ' actions=NORMAL')
+        # Enabling IP forwarding on switches and router
+        self.cmd ( 'echo 1 > /proc/sys/net/ipv4/ip_forward')
+        # Enale proxy_arp configuration
+        self.cmd ( 'echo "1" >  /proc/sys/net/ipv4/conf/%s' % self + \
+                   '/proxy_arp')
+        if self.name != "r0":
+            # Setting default gateway (router IP )on Switches
+            # User must have to change it if changing IP of router
+            self.cmd( ' route add default gw 192.168.0.1 ' )
         for intf in self.intfList():
             self.TCReapply( intf )
 
     def stop( self ):
         "Terminate OVS switch."
         self.cmd( 'ovs-vsctl del-br', self )
+        if self.name == "r0":
+            # Removing veth pairs
+            self.cmd ( 'ip link delete bridge-pair0 type veth peer name bridge-pair1' )
+            # Deleting "ex-veth1" port from "r1" bridge
+            self.cmd ( 'ovs-vsctl del-port "r1" "ex-veth1" ')
+            # Deleting bridge "r1"
+            self.cmd ( 'ovs-vsctl del-br "r1" ')
+        # Removing veth pairs
+        quietRun ( 'ip link del ex-veth0 type veth peer name ex-veth1' )
+        # Killing vswitchd process
+        cmd = ( 'kill -9  %s ' % self.vswitchpid )
+        self.cmd ( cmd )
+        # Killing  ovsdb server
+        cmd = ( 'kill -9  %s ' % self.serverpid )
+        self.cmd ( cmd )
         if self.datapath == 'user':
             self.cmd( 'ip link del', self )
         self.deleteIntfs()

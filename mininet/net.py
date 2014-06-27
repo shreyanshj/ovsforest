@@ -338,11 +338,6 @@ class Mininet( object ):
         for switchName in topo.switches():
             self.addSwitch( switchName, **topo.nodeInfo( switchName) )
             info( switchName + ' ' )
-            if (switchName == 'r0'):
-                quietRun('ip link add R-veth0 type veth peer name R-veth1')
-                quietRun('ip link set R-veth1 netns mn-r0')
-                quietRun('ip link set dev R-veth0 up')
-                quietRun('ip netns exec mn-r0 ip link set dev R-veth1 up')
 
         info( '\n*** Adding links:\n' )
         for srcName, dstName in topo.links(sort=True):
@@ -352,7 +347,6 @@ class Mininet( object ):
             self.addLink( src, dst, srcPort, dstPort, **params )
             info( '(%s, %s) ' % ( src.name, dst.name ) )
 
-       
         info( '\n' )
 
     def configureControlNetwork( self ):
