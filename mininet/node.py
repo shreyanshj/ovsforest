@@ -1048,7 +1048,7 @@ class OVSForest( Switch ):
         self.cmd('export OVS_RUNDIR=%s' % a )
         #Initialize the configuration database using ovsdb-tool
         self.cmd( 'ovsdb-tool create %s' % a + '/conf.db' + \
-                  ' /home/neeraj/openvswitch-2.0.0/vswitchd/vswitch.ovsschema' )
+                  ' /home/shrey/work/openvswitch-2.0.0/vswitchd/vswitch.ovsschema' )
         # Before starting ovs-vswitchd itself, you need to start its
         # configuration database, ovsdb-server.  Each machine/namespace on
         # which OpenvSwitch is installed should run its own copy of ovsdb-server.

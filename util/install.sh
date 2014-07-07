@@ -11,6 +11,7 @@ set -o nounset
 
 # Get directory containing mininet folder
 MININET_DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )/../.." && pwd -P )"
+MINIET_BINARY=ovs-forest
 
 # Set up build directory, which by default is the working directory
 #  unless the working directory is a subdirectory of mininet, 
@@ -124,7 +125,7 @@ function mn_deps {
     fi
 
     echo "Installing Mininet core"
-    pushd $MININET_DIR/mininet
+    pushd $MININET_DIR/$MINIET_BINARY
     sudo make install
     popd
 }
@@ -152,7 +153,7 @@ function of {
     cd $BUILD_DIR/openflow
 
     # Patch controller to handle more than 16 switches
-    patch -p1 < $MININET_DIR/mininet/util/openflow-patches/controller.patch
+    patch -p1 < $MININET_DIR/$MINIET_BINARY/util/openflow-patches/controller.patch
 
     # Resume the install:
     ./boot.sh
@@ -258,7 +259,7 @@ function wireshark {
 
     # Copy coloring rules: OF is white-on-blue:
     mkdir -p $HOME/.wireshark
-    cp $MININET_DIR/mininet/util/colorfilters $HOME/.wireshark
+    cp $MININET_DIR/$MINIET_BINARY/util/colorfilters $HOME/.wireshark
 }
 
 
@@ -417,9 +418,9 @@ function nox {
 
     # Apply patches
     git checkout -b tutorial-destiny
-    git am $MININET_DIR/mininet/util/nox-patches/*tutorial-port-nox-destiny*.patch
+    git am $MININET_DIR/$MINIET_BINARY/util/nox-patches/*tutorial-port-nox-destiny*.patch
     if [ "$DIST" = "Ubuntu" ] && [ `expr $RELEASE '>=' 12.04` = 1 ]; then
-        git am $MININET_DIR/mininet/util/nox-patches/*nox-ubuntu12-hacks.patch
+        git am $MININET_DIR/$MINIET_BINARY/util/nox-patches/*nox-ubuntu12-hacks.patch
     fi
 
     # Build
